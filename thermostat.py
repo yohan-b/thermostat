@@ -14,6 +14,7 @@ def getDateTimeFromISO8601String(s):
     d = parser.parse(s)
     return d
 
+# TODO: Put those in a YAML conf file
 rooms_settings = {\
             "double bedroom": {\
                                "target_awake_temperature": 19,\
@@ -124,6 +125,7 @@ while True:
       if not rooms_settings[room]["enabled"]:
         continue
       target = rooms_settings[room][target_name]
+      # TODO: Use sensors-polling service API instead
       returned_output = subprocess.check_output(["/usr/bin/owread", "-s", "localhost:4304", rooms_settings[room]["sensor"]])
       try:
           temperature = round(float(returned_output.decode("utf-8").strip().strip("'")), 1)
