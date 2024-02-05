@@ -116,6 +116,7 @@ while True:
   except Exception as e:
     print(e)
     sys.stdout.flush() 
+    time.sleep(load_shedder_interval)
     continue
 
   # Thermostat
