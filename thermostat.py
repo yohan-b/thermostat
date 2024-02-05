@@ -20,7 +20,7 @@ rooms_settings = {\
                                "target_awake_temperature": 19,\
                                "target_sleep_temperature": 18,\
                                "target_frost_protection": 6,\
-                               "sensor": "/26.A6E96B020000/temperature",\
+                               "metric": "Modane_temperature_double_bedroom",\
                                "relays": "1",\
                                "enabled": True
                               },\
@@ -28,7 +28,7 @@ rooms_settings = {\
                                "target_awake_temperature": 17,\
                                "target_sleep_temperature": 16,\
                                "target_frost_protection": 6,\
-                               "sensor": "/26.3FA954020000/temperature",\
+                               "metric": "Modane_temperature_single_bedroom",\
                                "relays": "3",\
                                "enabled": True
                               },\
@@ -36,7 +36,7 @@ rooms_settings = {\
                                "target_awake_temperature": 20,\
                                "target_sleep_temperature": 18,\
                                "target_frost_protection": 6,\
-                               "sensor": "/26.23D26B020000/temperature",\
+                               "metric": "Modane_temperature_living_room",\
                                "relays": "4",\
                                "enabled": True
                               },\
@@ -44,7 +44,7 @@ rooms_settings = {\
                                "target_awake_temperature": 20,\
                                "target_sleep_temperature": 19,\
                                "target_frost_protection": 6,\
-                               "sensor": "/26.A4C354020000/temperature",\
+                               "metric": "Modane_temperature_bathroom",\
                                "relays": "",\
                                "enabled": False
                               }
@@ -83,6 +83,21 @@ def set_relay(relay, state):
     print(now()+" set relay "+relay+" to "+state+": Failed to command relays board.")
     sys.stdout.flush() 
 
+def get_metric(metric, current_time, interval):
+  url = "http://localhost:3000/"+metric
+  try:
+    r = requests.get(url)
+    data = json.loads(r.text)
+    timestamp = getDateTimeFromISO8601String(data['timestamp']).replace(tzinfo=timezone.utc).timestamp()
+    if current_time - timestamp < interval * 2:
+      return data['value']
+    else:
+      print("WARNING: No recent load data available.")
+  except Exception as e:
+    print(e)
+  sys.stdout.flush() 
+  return None
+
 print(now()+" Starting thermostat.")
 sys.stdout.flush() 
 
@@ -100,24 +115,14 @@ load_margin = 100
 while True:
   current_time = time.time()
   # Load shedder
-  url = "http://localhost:3000/Modane_elec_main_power"
-  try:
-    r = requests.get(url)
-    data = json.loads(r.text)
-    current_load = data['value']
-    if current_time - getDateTimeFromISO8601String(data['timestamp']).replace(tzinfo=timezone.utc).timestamp() < load_shedder_interval * 2:
-      if max_load - current_load < load_margin:
-         print("Load too high.")
-         sys.stdout.flush() 
-         # TODO: disable a chosen relay to lower load
-    else:
-      print("WARNING: No recent load data available.")
-      sys.stdout.flush() 
-  except Exception as e:
-    print(e)
-    sys.stdout.flush() 
+  current_load = get_metric("Modane_elec_main_power", current_time, load_shedder_interval)
+  if current_load is None:
     time.sleep(load_shedder_interval)
     continue
+  elif max_load - current_load < load_margin:
+     print("Load too high.")
+     sys.stdout.flush() 
+     # TODO: disable a chosen relay to lower load
 
   # Thermostat
   if last_control_time is None or current_time - last_control_time > relay_control_interval:
@@ -126,13 +131,9 @@ while True:
       if not rooms_settings[room]["enabled"]:
         continue
       target = rooms_settings[room][target_name]
-      # TODO: Use sensors-polling service API instead
-      returned_output = subprocess.check_output(["/usr/bin/owread", "-s", "localhost:4304", rooms_settings[room]["sensor"]])
-      try:
-          temperature = round(float(returned_output.decode("utf-8").strip().strip("'")), 1)
-      except ValueError:
-          print (now()+" "+room+": Expected temperature, got garbage: "+returned_output)
-          sys.exit(1)
+      temperature = get_metric(rooms_settings[room]["metric"], current_time, relay_control_interval)
+      if temperature is None:
+        continue
       #print(now()+" "+room+": "+str(temperature))
       current_state = relay_state(rooms_settings[room]["relays"])
       if current_state != "Failed":
