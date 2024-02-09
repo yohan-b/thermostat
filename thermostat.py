@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import sys
 import subprocess
+import logging
 import time
 import datetime
 from datetime import timezone
 import requests
 import json
+import argparse
 
 # As of Python 3.7 there is a method datetime.fromisoformat() which is exactly the reverse for isoformat().
 # So this will no longer be necessary.
@@ -14,10 +16,23 @@ def getDateTimeFromISO8601String(s):
     d = parser.parse(s)
     return d
 
+p = argparse.ArgumentParser(description='Thermostat and load shedder.')
+p.add_argument("-v", "--verbosity", help="Increase output verbosity",
+                    type=str, choices=['DEBUG', 'INFO', 'WARNING'], default='INFO')
+args = p.parse_args()
+
+verbosity = args.verbosity
+if verbosity == 'DEBUG':
+    logging.basicConfig(level=logging.DEBUG)
+elif verbosity == 'INFO':
+    logging.basicConfig(level=logging.INFO)
+elif verbosity == 'WARNING':
+    logging.basicConfig(level=logging.WARNING)
+
 # TODO: Put those in a YAML conf file
 rooms_settings = {\
             "double bedroom": {\
-                               "target_awake_temperature": 19,\
+                               "target_awake_temperature": 20,\
                                "target_sleep_temperature": 18,\
                                "target_frost_protection": 6,\
                                "metric": "Modane_temperature_double_bedroom",\
@@ -33,7 +48,7 @@ rooms_settings = {\
                                "enabled": True
                               },\
             "living room": {\
-                               "target_awake_temperature": 20,\
+                               "target_awake_temperature": 21,\
                                "target_sleep_temperature": 18,\
                                "target_frost_protection": 6,\
                                "metric": "Modane_temperature_living_room",\
@@ -59,8 +74,8 @@ relays_load = {\
 
 # TODO: Use POST API to set those
 #target_name = "target_awake_temperature"
-#target_name = "target_sleep_temperature"
-target_name = "target_frost_protection"
+target_name = "target_sleep_temperature"
+#target_name = "target_frost_protection"
 
 def now():
   return "["+datetime.datetime.now().strftime("%c")+"]"
@@ -68,19 +83,21 @@ def now():
 def relay_state(relay):
   try:
     returned_output = subprocess.check_output(["./relay.py", relay, "status"])
-    return returned_output
-  except:
-    print(now()+" relay "+relay+" status: Failed to command relays board.")
+    return returned_output.strip().decode("utf-8")
+  except Exception as e:
+    logging.error(e)
+    logging.error("relay "+relay+" status: Failed to command relays board.")
     sys.stdout.flush() 
     return "Failed"
 
 def set_relay(relay, state):
   try:
     returned_output = subprocess.check_output(["./relay.py", relay, state])
-    print(now()+" set relay "+relay+" to "+state+", new global status: "+returned_output.split('\n')[1])
+    logging.info("set relay "+relay+" to "+state+", new global status: "+returned_output.decode("utf-8").split('\n')[1])
     sys.stdout.flush() 
-  except:
-    print(now()+" set relay "+relay+" to "+state+": Failed to command relays board.")
+  except Exception as e:
+    logging.error(e)
+    logging.error("set relay "+relay+" to "+state+": Failed to command relays board.")
     sys.stdout.flush() 
 
 def get_metric(metric, current_time, interval):
@@ -92,14 +109,11 @@ def get_metric(metric, current_time, interval):
     if current_time - timestamp < interval * 2:
       return data['value']
     else:
-      print("WARNING: No recent load data available.")
+      logging.warning("WARNING: No recent load data available.")
   except Exception as e:
-    print(e)
+    logging.error(e)
   sys.stdout.flush() 
   return None
-
-print(now()+" Starting thermostat.")
-sys.stdout.flush() 
 
 start_time = time.time()
 last_control_time = None
@@ -112,6 +126,8 @@ relay_control_interval = 600.0
 max_load = 7800
 load_margin = 100
 
+logging.info("====== Starting ======")
+
 while True:
   current_time = time.time()
   # Load shedder
@@ -120,8 +136,7 @@ while True:
     time.sleep(load_shedder_interval)
     continue
   elif max_load - current_load < load_margin:
-     print("Load too high.")
-     sys.stdout.flush() 
+     logging.warning("Load too high.")
      # TODO: disable a chosen relay to lower load
 
   # Thermostat
@@ -131,27 +146,34 @@ while True:
       if not rooms_settings[room]["enabled"]:
         continue
       target = rooms_settings[room][target_name]
+      logging.debug("Target: "+str(target))
       temperature = get_metric(rooms_settings[room]["metric"], current_time, relay_control_interval)
       if temperature is None:
         continue
-      #print(now()+" "+room+": "+str(temperature))
+      logging.debug(room+": "+str(temperature))
       current_state = relay_state(rooms_settings[room]["relays"])
       if current_state != "Failed":
+        logging.debug("Got relay_state: '"+current_state+"'")
         if temperature < target - 0.5:
           if current_state == "0":
-            print(now()+" "+room+": Target temperature is "+str(target))
-            print(now()+" "+room+": Current temperature is "+str(temperature))
+            logging.info(room+": Target temperature is "+str(target))
+            logging.info(room+": Current temperature is "+str(temperature))
             if current_load + relays_load[rooms_settings[room]["relays"]] + load_margin > max_load:
-              print(now()+" "+room+": Load too high cannot start heaters.")
+              logging.warning(room+": Load too high cannot start heaters.")
             else:
-              print(now()+" "+room+": Starting heaters.")
+              logging.info(room+": Starting heaters.")
               set_relay(rooms_settings[room]["relays"], "on")
             sys.stdout.flush() 
+          else:
+            logging.debug("Relay already on.")
+
         elif temperature > target + 0.5:
           if current_state == "1":
-            print(now()+" "+room+": Target temperature is "+str(target))
-            print(now()+" "+room+": Current temperature is "+str(temperature))
-            print(now()+" "+room+": Stopping heaters.")
+            logging.info(room+": Target temperature is "+str(target))
+            logging.info(room+": Current temperature is "+str(temperature))
+            logging.info(room+": Stopping heaters.")
             sys.stdout.flush() 
             set_relay(rooms_settings[room]["relays"], "off")
+          else:
+            logging.debug("Relay already off.")
   time.sleep(load_shedder_interval)
