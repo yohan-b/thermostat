@@ -1,0 +1,73 @@
+http_port: 3001
+targets:
+  - target_awake_temperature
+  - target_sleep_temperature
+  - target_frost_protection
+
+modes:
+  - short_absence
+  - long_absence
+
+rooms_settings:
+  "double bedroom":
+    target_awake_temperature: 19
+    target_unconfirmed_awake_temperature: 18
+    target_sleep_temperature: 18
+    target_unconfirmed_sleep_temperature: 18
+    target_frost_protection: 6
+    metric: Modane_temperature_double_bedroom
+    relays: "1"
+    enabled: True
+  "single bedroom":
+    target_awake_temperature: 17
+    target_unconfirmed_awake_temperature: 16
+    target_sleep_temperature: 16
+    target_unconfirmed_sleep_temperature: 16
+    target_frost_protection: 6
+    metric: Modane_temperature_single_bedroom
+    relays: "3"
+    enabled: True
+  "living room":
+    target_awake_temperature: 21
+    target_unconfirmed_awake_temperature: 21
+    target_sleep_temperature: 18
+    target_unconfirmed_sleep_temperature: 21
+    target_frost_protection: 6
+    metric: Modane_temperature_living_room
+    relays: "4"
+    enabled: True
+  "bathroom":
+    target_awake_temperature: 21
+    target_unconfirmed_awake_temperature: 21
+    target_sleep_temperature: 19
+    target_unconfirmed_sleep_temperature: 21
+    target_frost_protection: 6
+    metric: Modane_temperature_bathroom
+    relays: ""
+    enabled: False
+
+# If there is too much load, it most likely means someone is cooking and nobody is in the bedrooms.
+shedding_order:
+  - double bedroom
+  - single bedroom
+  - living room
+
+default_target: target_frost_protection
+
+# Load in VA
+relays_load:
+  "1": 1500
+  "3": 1500
+  "4": 2000
+
+awake_hour: "7:30"
+sleep_hour: "23:30"
+forced_mode_duration: 7200.0
+load_shedder_interval: 10.0
+relay_control_interval: 600.0
+
+# Puissance souscrite : 6kVA
+# Puissance max avant coupure (marge 30%) : 7,8kVA
+max_load: 7800
+load_margin: 100
+

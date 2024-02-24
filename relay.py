@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # Pilotage GCE USB 8 Relay Board
 import time
 import serial
